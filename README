@@ -8,9 +8,9 @@
 
 #### 2. 编译打包命令
 在项目根目录（包含 `pom.xml` 的目录）下执行：
-```bash
+```bash </>
 mvn clean package -DskipTests
-```
+``` </>
 
 #### 3. 产出物
 -   **Jar包名称**: `tmall-repurchase-1.0.jar`
@@ -30,27 +30,27 @@ mvn clean package -DskipTests
 -   **输入**: `/user/231220104a/final_exp/train.csv`
 -   **输出**: `/user/231220104a/clean_out`, `/user/231220104a/feature_out`
 
-```bash
+```bash </>
 spark-submit \
   --class com.nju.tmall.Task1_CleanAndFeature \
   tmall-repurchase-1.0.jar \
   /user/231220104a/final_exp/train.csv \
   /user/231220104a/clean_out \
   /user/231220104a/feature_out
-```
+``` </>
 
 #### Task2: 数据分析（倒排索引 + 共现矩阵）
 -   **功能**: 基于清洗后日志构建商品-用户倒排索引及Top1000共现商品对。
 -   **输入**: `/user/231220104a/clean_out` (Task1产出)
 -   **输出**: `/user/231220104a/task2_out/item_user_inverted_index`, `/user/231220104a/task2_out/item_co_occurrence`
 
-```bash
+```bash </>
 spark-submit \
   --class com.nju.tmall.Task2_Analysis \
   tmall-repurchase-1.0.jar \
   /user/231220104a/clean_out \
   /user/231220104a/task2_out
-```
+``` </>
 
 #### Task3: KMeans 用户聚类
 -   **功能**: 对用户特征进行KMeans聚类，输出聚类中心及用户标签。
@@ -58,7 +58,7 @@ spark-submit \
 -   **输出**: `/user/231220104a/task3_out/cluster_centers.txt`, `user_cluster_labels.csv`
 -   **参数**: 最后一个参数 `5` 为聚类数K值
 
-```bash
+```bash </>
 spark-submit \
   --class com.nju.tmall.Task3_KMeans \
   --num-executors 1 \
@@ -68,7 +68,7 @@ spark-submit \
   /user/231220104a/feature_out \
   /user/231220104a/task3_out \
   5
-```
+``` </>
 
 #### Task4: PersonalRank 个性化推荐
 -   **功能**: 基于倒排索引构建二部图，对指定用户执行PersonalRank算法生成Top10推荐。
@@ -76,7 +76,7 @@ spark-submit \
 -   **输出**: HDFS上的推荐结果文件
 -   **参数**: `133077` 为目标推荐用户ID
 
-```bash
+```bash </>
 spark-submit \
   --class com.nju.tmall.Task4_PersonalRank \
   --master yarn \
@@ -95,7 +95,7 @@ spark-submit \
   /user/231220104a/clean_out \
   133077 \
   /user/231220104a/task4_out/recommend_result.txt
-```
+``` </>
 
 > **⚠️ Task4 特别说明**：
 > 1.  代码中参数顺序为 `<inverted_index_path> <clean_log_path> <target_user_id> <output_path>`，共4个参数。您提供的参考命令只有3个参数，**缺少输出路径**，请在末尾补充输出文件路径（如上方命令所示）。
@@ -117,3 +117,4 @@ spark-submit \
 1.  **FileAlreadyExistsException**: 所有任务代码均已内置输出目录自动删除逻辑，正常情况下不会报此错。若仍出现，请手动 `hdfs dfs -rm -r <输出路径>` 后重试。
 2.  **OOM / Timeout**: Task4 若失败，可适当增大 `--executor-memory` 或 `spark.network.timeout`。
 3.  **空结果**: 检查 Task2 倒排索引是否为空（仅 cart/fav/buy 行为会被纳入），确认目标用户ID在清洗日志中存在交互记录。
+```
