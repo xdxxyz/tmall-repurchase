@@ -1,0 +1,121 @@
+根据您提供的代码和参考命令，以下是完整的编译与执行方法说明：
+
+### 一、 项目编译方法
+
+#### 1. 环境要求
+-   **JDK**: 1.8 (pom.xml 中指定 `maven.compiler.source=8`)
+-   **Maven**: 3.x+
+-   **Spark**: 3.1.1 (集群版本需匹配)
+注：实际执行位置为课程实验平台
+
+#### 2. 编译打包命令
+在项目根目录（包含 `pom.xml` 的目录）下执行：
+```bash
+mvn clean package -DskipTests
+```
+
+#### 3. 产出物
+-   **Jar包名称**: `tmall-repurchase-1.0.jar`
+-   **生成位置**: `target/tmall-repurchase-1.0.jar`
+-   **打包插件**: 使用 `maven-shade-plugin` 构建 Fat Jar，已自动处理依赖冲突并排除签名文件。
+
+> **⚠️ 注意**：`pom.xml` 中默认主类配置为 `Task2_Analysis`，但由于采用 `spark-submit --class` 方式提交，**无需修改 pom.xml**，运行时通过命令行参数指定具体任务类即可。
+
+---
+
+### 二、 任务执行顺序与命令
+
+请严格按照 **Task1 → Task2 → Task3 → Task4** 的顺序执行，因为后续任务依赖前序任务的输出路径。以下命令中的 HDFS 路径请根据您的实际用户名（示例中为 `231220104a`）进行替换。
+
+#### Task1: 数据清洗与特征提取
+-   **功能**: 读取原始日志，清洗脏数据，输出清洗后日志及用户3维归一化特征。
+-   **输入**: `/user/231220104a/final_exp/train.csv`
+-   **输出**: `/user/231220104a/clean_out`, `/user/231220104a/feature_out`
+
+```bash
+spark-submit \
+  --class com.nju.tmall.Task1_CleanAndFeature \
+  tmall-repurchase-1.0.jar \
+  /user/231220104a/final_exp/train.csv \
+  /user/231220104a/clean_out \
+  /user/231220104a/feature_out
+```
+
+#### Task2: 数据分析（倒排索引 + 共现矩阵）
+-   **功能**: 基于清洗后日志构建商品-用户倒排索引及Top1000共现商品对。
+-   **输入**: `/user/231220104a/clean_out` (Task1产出)
+-   **输出**: `/user/231220104a/task2_out/item_user_inverted_index`, `/user/231220104a/task2_out/item_co_occurrence`
+
+```bash
+spark-submit \
+  --class com.nju.tmall.Task2_Analysis \
+  tmall-repurchase-1.0.jar \
+  /user/231220104a/clean_out \
+  /user/231220104a/task2_out
+```
+
+#### Task3: KMeans 用户聚类
+-   **功能**: 对用户特征进行KMeans聚类，输出聚类中心及用户标签。
+-   **输入**: `/user/231220104a/feature_out` (Task1产出)
+-   **输出**: `/user/231220104a/task3_out/cluster_centers.txt`, `user_cluster_labels.csv`
+-   **参数**: 最后一个参数 `5` 为聚类数K值
+
+```bash
+spark-submit \
+  --class com.nju.tmall.Task3_KMeans \
+  --num-executors 1 \
+  --executor-memory 2g \
+  --driver-memory 2g \
+  tmall-repurchase-1.0.jar \
+  /user/231220104a/feature_out \
+  /user/231220104a/task3_out \
+  5
+```
+
+#### Task4: PersonalRank 个性化推荐
+-   **功能**: 基于倒排索引构建二部图，对指定用户执行PersonalRank算法生成Top10推荐。
+-   **输入**: Task2倒排索引 + Task1清洗日志
+-   **输出**: HDFS上的推荐结果文件
+-   **参数**: `133077` 为目标推荐用户ID
+
+```bash
+spark-submit \
+  --class com.nju.tmall.Task4_PersonalRank \
+  --master yarn \
+  --driver-memory 8g \
+  --executor-memory 8g \
+  --conf spark.driver.maxResultSize=4g \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.network.timeout=600s \
+  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC" \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  --conf spark.rdd.compress=true \
+  --conf spark.task.maxFailures=8 \
+  --conf spark.yarn.maxAppAttempts=1 \
+  tmall-repurchase-1.0.jar \
+  /user/231220104a/task2_out/item_user_inverted_index \
+  /user/231220104a/clean_out \
+  133077 \
+  /user/231220104a/task4_out/recommend_result.txt
+```
+
+> **⚠️ Task4 特别说明**：
+> 1.  代码中参数顺序为 `<inverted_index_path> <clean_log_path> <target_user_id> <output_path>`，共4个参数。您提供的参考命令只有3个参数，**缺少输出路径**，请在末尾补充输出文件路径（如上方命令所示）。
+> 2.  Task4 涉及大量图迭代计算，内存消耗较大，建议保留参考命令中的 G1GC、Kryo序列化、RDD压缩等优化配置。
+> 3.  程序会自动设置 checkpoint 目录为 `hdfs:///user/<当前用户>/spark-checkpoint`，请确保该路径有写入权限。
+
+---
+
+### 三、 数据流依赖关系图
+
+| 任务 | 输入来源 | 输出去向 | 关键产出文件 |
+| :--- | :--- | :--- | :--- |
+| Task1 | 原始 train.csv | clean_out, feature_out | 清洗日志、用户特征CSV |
+| Task2 | clean_out | task2_out/ | item_user_inverted_index, item_co_occurrence |
+| Task3 | feature_out | task3_out/ | cluster_centers.txt, user_cluster_labels.csv |
+| Task4 | task2_out/inverted_index + clean_out | 自定义输出路径 | 推荐结果(用户ID\t物品:分数,...) |
+
+### 四、 常见问题排查
+1.  **FileAlreadyExistsException**: 所有任务代码均已内置输出目录自动删除逻辑，正常情况下不会报此错。若仍出现，请手动 `hdfs dfs -rm -r <输出路径>` 后重试。
+2.  **OOM / Timeout**: Task4 若失败，可适当增大 `--executor-memory` 或 `spark.network.timeout`。
+3.  **空结果**: 检查 Task2 倒排索引是否为空（仅 cart/fav/buy 行为会被纳入），确认目标用户ID在清洗日志中存在交互记录。
